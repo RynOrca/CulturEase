@@ -96,6 +96,40 @@ export function saveCachedKit(kitJson: string): void {
   localStorage.setItem("cultur-ease-kit", kitJson);
 }
 
+// ─── Culture Analysis Cache ──────────────────────────────────────────
+
+const ANALYSIS_CACHE_KEY = "cultur-ease-analysis-cache";
+const ANALYSIS_CACHE_TTL = 3 * 60 * 60 * 1000; // 3 hours
+
+export interface CachedAnalysis {
+  analysis: object;
+  timestamp: number;
+  diaryCount: number;
+  targetCity: string;
+}
+
+export function loadCachedAnalysis(): CachedAnalysis | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(ANALYSIS_CACHE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveCachedAnalysis(cache: CachedAnalysis): void {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(ANALYSIS_CACHE_KEY, JSON.stringify(cache));
+}
+
+export function isAnalysisStale(cached: CachedAnalysis, currentDiaryCount: number, currentCity: string): boolean {
+  if (Date.now() - cached.timestamp > ANALYSIS_CACHE_TTL) return true;
+  if (cached.diaryCount !== currentDiaryCount) return true;
+  if (cached.targetCity !== currentCity) return true;
+  return false;
+}
+
 // ─── AI Briefing Cache ─────────────────────────────────────────────────
 
 export function loadCachedBriefing(): { text: string; timestamp: number } | null {

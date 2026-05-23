@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import { DiaryEntry } from "@/lib/types";
-import { loadUserProfile, loadDiaries } from "@/lib/storage";
+import { loadUserProfile, loadDiaries, loadCachedAnalysis, saveCachedAnalysis, isAnalysisStale } from "@/lib/storage";
 import { getApiConfigParams } from "@/lib/ai/config-loader";
 import { MOCK_DIARIES, CITY_DATA } from "@/lib/data";
 import { DiaryCard } from "@/components/diary/DiaryCard";
@@ -62,11 +62,18 @@ export default function Home() {
     setDiaries(unique);
   }, [router]);
 
-  // Fetch culture analysis
+  // Fetch culture analysis — cached for 3h or until new diary
   useEffect(() => {
     if (!profile) return;
 
     const userDiaries = loadDiaries();
+    const cached = loadCachedAnalysis();
+
+    // Use cache if still fresh
+    if (cached && !isAnalysisStale(cached, userDiaries.length, profile.targetCity)) {
+      setCultureAnalysis(cached.analysis as typeof cultureAnalysis);
+      return;
+    }
 
     setAnalysisLoading(true);
     fetch("/api/ai/culture-analysis", {
@@ -89,6 +96,12 @@ export default function Home() {
       .then((data) => {
         if (data?.analysis) {
           setCultureAnalysis(data.analysis);
+          saveCachedAnalysis({
+            analysis: data.analysis,
+            timestamp: Date.now(),
+            diaryCount: userDiaries.length,
+            targetCity: profile.targetCity,
+          });
         }
       })
       .catch(() => {})
