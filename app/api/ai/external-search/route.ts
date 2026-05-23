@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { callAI, type AIProvider } from "@/lib/ai/providers";
 
 interface ExternalResult {
   title: string;
@@ -7,11 +8,13 @@ interface ExternalResult {
   platform: string;
   platformLabel: string;
   platformColor: string;
+  /** Plan A = deep link, Plan B = scraped result */
+  plan: "A" | "B";
 }
 
 // In-memory cache: 30 min TTL
 const cache = new Map<string, { data: ExternalResult[]; expires: number }>();
-const CACHE_TTL = 30 * 60 * 1000; // 30 min
+const CACHE_TTL = 30 * 60 * 1000;
 
 function cacheKey(query: string, targetCity: string): string {
   return `${query}::${targetCity}`;
@@ -31,14 +34,14 @@ function setCache(key: string, data: ExternalResult[]): void {
   cache.set(key, { data, expires: Date.now() + CACHE_TTL });
 }
 
-// ─── B站 (Bilibili) — 公开 API ──────────────────────────────────────
+// ─── B站 (Bilibili) — Plan B: 公开 API ──────────────────────────────
 
 async function searchBilibili(query: string): Promise<ExternalResult[]> {
   try {
     const url = `https://api.bilibili.com/x/web-interface/search/type?search_type=video&keyword=${encodeURIComponent(query)}&page=1`;
     const res = await fetch(url, {
       headers: {
-        "User-Agent": "CulturEase/1.0 (study-abroad platform; contact@example.com)",
+        "User-Agent": "CulturEase/1.0 (study-abroad platform)",
         Referer: "https://www.bilibili.com",
       },
       signal: AbortSignal.timeout(6000),
@@ -46,87 +49,102 @@ async function searchBilibili(query: string): Promise<ExternalResult[]> {
     if (!res.ok) return [];
     const json = await res.json();
     const items = json?.data?.result ?? [];
-    return items.slice(0, 6).map((item: any) => ({
+    return items.slice(0, 20).map((item: any) => ({
       title: item.title?.replace(/<[^>]*>/g, "") ?? "",
       snippet: item.description?.replace(/<[^>]*>/g, "")?.slice(0, 120) ?? "",
       url: `https://www.bilibili.com/video/${item.bvid ?? item.aid}`,
       platform: "bilibili",
       platformLabel: "B站",
       platformColor: "#FB7299",
+      plan: "B" as const,
     }));
   } catch {
     return [];
   }
 }
 
-// ─── 知乎 — 内部搜索 API ────────────────────────────────────────────
+// ─── AI 审查过滤 ─────────────────────────────────────────────────────
 
-async function searchZhihu(query: string): Promise<ExternalResult[]> {
+async function aiFilterResults(
+  results: ExternalResult[],
+  query: string,
+  targetCity: string,
+  apiKey?: string,
+  apiBaseUrl?: string,
+  provider?: string,
+): Promise<ExternalResult[]> {
+  if (results.length === 0) return [];
+  if (!apiKey) {
+    // Without AI, just take top 5 and hope for the best
+    return results.slice(0, 5);
+  }
+
   try {
-    const url = `https://www.zhihu.com/api/v4/search_v3?q=${encodeURIComponent(query)}&type=content&t=general&limit=6`;
-    const res = await fetch(url, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (compatible; CulturEase/1.0)",
-        Accept: "application/json",
-      },
-      signal: AbortSignal.timeout(6000),
-    });
-    if (!res.ok) return [];
-    const json = await res.json();
-    const items = json?.data ?? [];
-    return items.slice(0, 6).map((item: any) => {
-      const obj = item.object ?? item.target ?? item;
-      return {
-        title: (obj.title ?? obj.excerpt_title ?? "").replace(/<[^>]*>/g, ""),
-        snippet: (obj.excerpt ?? obj.content ?? "").replace(/<[^>]*>/g, "").slice(0, 150),
-        url: obj.url ?? `https://www.zhihu.com/question/${obj.id}`,
-        platform: "zhihu",
-        platformLabel: "知乎",
-        platformColor: "#0066FF",
-      };
-    });
+    const resultsJson = results.map((r, i) => ({
+      index: i,
+      title: r.title,
+      snippet: r.snippet,
+    }));
+
+    const prompt = `用户搜索"${query}"（目标城市：${targetCity}），想了解留学生活、文化、实用信息。
+
+以下是B站搜索的原始结果。请审查并过滤：
+
+1. 删除与留学、当地生活、文化体验完全无关的内容（如纯娱乐明星MV、游戏、与目标城市无关的八卦等）
+2. 如果多个结果内容高度相似（如同一主题的多个视频），只保留最相关的一个
+3. 优先保留：留学攻略、租房经验、生活vlog、景点推荐、美食探店、语言学习、文化差异等实用内容
+
+返回纯JSON数组（只包含该保留的结果的index）：
+例如: [0, 2, 5, 7]
+
+原始结果：
+${JSON.stringify(resultsJson, null, 2)}`;
+
+    const answer = await callAI(
+      [{ role: "user", content: prompt }],
+      { maxTokens: 200, temperature: 0.3, apiKey, apiBaseUrl, provider: provider as AIProvider | undefined },
+    );
+
+    // Parse the AI response to get indices
+    const jsonMatch = answer.match(/\[[\d,\s]*\]/);
+    if (jsonMatch) {
+      const indices: number[] = JSON.parse(jsonMatch[0]);
+      return indices
+        .filter((i) => i >= 0 && i < results.length)
+        .map((i) => results[i]);
+    }
+
+    // Fallback: just take first 5
+    return results.slice(0, 5);
   } catch {
-    return [];
+    return results.slice(0, 5);
   }
 }
 
-// ─── 小红书 — HTML 抓取（有限支持）─────────────────────────────────
+// ─── Plan A: 深度链接卡片 ───────────────────────────────────────────
 
-async function searchXiaohongshu(query: string): Promise<ExternalResult[]> {
-  try {
-    const searchUrl = `https://www.xiaohongshu.com/search_result?keyword=${encodeURIComponent(query)}&source=web_search_result_notes`;
-    const res = await fetch(searchUrl, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        Accept: "text/html,application/xhtml+xml",
-        "Accept-Language": "zh-CN,zh;q=0.9",
-      },
-      signal: AbortSignal.timeout(8000),
-    });
-    if (!res.ok) return [];
-
-    const html = await res.text();
-
-    // Extract __INITIAL_STATE__ JSON from HTML
-    const stateMatch = html.match(/window\.__INITIAL_STATE__\s*=\s*({[\s\S]*?})\s*<\/script>/);
-    if (!stateMatch) return [];
-
-    // Replace undefined values (not valid JSON) with null before parsing
-    const cleaned = stateMatch[1].replace(/undefined/g, "null");
-    const state = JSON.parse(cleaned);
-
-    const notes = state?.search?.notes?.items ?? [];
-    return notes.slice(0, 6).map((item: any) => ({
-      title: item.noteCard?.displayTitle ?? item.title ?? "",
-      snippet: (item.noteCard?.desc ?? "").slice(0, 150),
-      url: `https://www.xiaohongshu.com/explore/${item.noteId ?? item.id}`,
+function deepLinkCards(query: string, targetCity: string): ExternalResult[] {
+  const q = encodeURIComponent(`${targetCity} ${query}`.trim());
+  return [
+    {
+      title: `在知乎搜索"${targetCity} ${query}"`,
+      snippet: `知乎上有大量留学生分享的${targetCity}生活经验和攻略`,
+      url: `https://www.zhihu.com/search?type=content&q=${q}`,
+      platform: "zhihu",
+      platformLabel: "知乎",
+      platformColor: "#0066FF",
+      plan: "A" as const,
+    },
+    {
+      title: `在小红书搜索"${targetCity} ${query}"`,
+      snippet: `小红书有最新的${targetCity}留学生活笔记、探店和避雷帖`,
+      url: `https://www.xiaohongshu.com/search_result?keyword=${q}&source=web_search_result_notes`,
       platform: "xiaohongshu",
       platformLabel: "小红书",
       platformColor: "#FE2C55",
-    }));
-  } catch {
-    return [];
-  }
+      plan: "A" as const,
+    },
+  ];
 }
 
 // ─── 主入口 ──────────────────────────────────────────────────────────
@@ -134,7 +152,7 @@ async function searchXiaohongshu(query: string): Promise<ExternalResult[]> {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { query, targetCity } = body;
+    const { query, targetCity, apiKey, apiBaseUrl, provider } = body;
     const q = `${targetCity || ""} ${query || ""}`.trim();
     if (!q) {
       return NextResponse.json({ results: [] });
@@ -146,23 +164,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ results: cached });
     }
 
-    // Run all platform searches in parallel
-    const [bilibili, zhihu, xiaohongshu] = await Promise.all([
-      searchBilibili(q).catch(() => []),
-      searchZhihu(q).catch(() => []),
-      searchXiaohongshu(q).catch(() => []),
-    ]);
+    // Plan B: Scrape B站
+    const rawBilibili = await searchBilibili(q).catch(() => []);
 
-    // Interleave results for diversity
-    const all: ExternalResult[] = [];
-    const maxLen = Math.max(bilibili.length, zhihu.length, xiaohongshu.length);
-    for (let i = 0; i < maxLen; i++) {
-      if (bilibili[i]) all.push(bilibili[i]);
-      if (zhihu[i]) all.push(zhihu[i]);
-      if (xiaohongshu[i]) all.push(xiaohongshu[i]);
-    }
+    // AI filter B站 results
+    const filteredBilibili = await aiFilterResults(rawBilibili, query, targetCity, apiKey, apiBaseUrl, provider);
 
-    const results = all.slice(0, 12);
+    // Plan A: Deep links for 知乎 & 小红书
+    const deepLinks = deepLinkCards(query, targetCity);
+
+    // Combine: filtered B站 first, then deep links
+    const results = [...filteredBilibili, ...deepLinks];
+
     setCache(key, results);
 
     return NextResponse.json({ results });
