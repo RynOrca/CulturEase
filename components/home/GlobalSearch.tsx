@@ -13,7 +13,6 @@ interface ExternalResult {
   platform: string;
   platformLabel: string;
   platformColor: string;
-  plan?: "A" | "B";
 }
 
 interface Props {
@@ -282,9 +281,7 @@ export function GlobalSearch({ targetCity, targetCountry, stage, sourceCountry, 
                       initial={{ opacity: 0, x: -12 }}
                       animate={{ opacity: 1, x: 0 }}
                       transition={{ delay: i * 0.04 }}
-                      className={`flex items-start gap-4 p-4 bg-white rounded-card border hover:shadow-card transition-all group ${
-                        item.plan === "A" ? "border-dashed border-cream" : "border-cream/50 hover:border-cream"
-                      }`}
+                      className="flex items-start gap-4 p-4 bg-white rounded-card border border-cream/50 hover:shadow-card hover:border-cream transition-all group"
                     >
                       {/* Platform badge */}
                       <span
@@ -304,19 +301,12 @@ export function GlobalSearch({ targetCity, targetCountry, stage, sourceCountry, 
                           </p>
                         )}
                       </div>
-                      {/* Icon: search for Plan A, external link for Plan B */}
-                      {item.plan === "A" ? (
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
-                          className="shrink-0 mt-1 text-slate/30 group-hover:text-terracotta transition-colors">
-                          <circle cx="11" cy="11" r="8" />
-                          <path d="M21 21l-4.35-4.35" />
-                        </svg>
-                      ) : (
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
-                          className="shrink-0 mt-1 text-slate/30 group-hover:text-terracotta transition-colors">
-                          <path d="M7 17L17 7M7 7h10v10" />
-                        </svg>
-                      )}
+                      {/* Search icon */}
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+                        className="shrink-0 mt-1 text-slate/30 group-hover:text-terracotta transition-colors">
+                        <circle cx="11" cy="11" r="8" />
+                        <path d="M21 21l-4.35-4.35" />
+                      </svg>
                     </motion.a>
                   ))}
                 </div>
