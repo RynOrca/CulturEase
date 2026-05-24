@@ -115,6 +115,9 @@ export default function ExplorePage() {
   const [categoryFilter, setCategoryFilter] = useState<NodeCategory | null>(null);
   const [showHeatmap, setShowHeatmap] = useState(true);
 
+  // Fly-to state for external map navigation
+  const [flyToTarget, setFlyToTarget] = useState<{ lat: number; lng: number; zoom: number }>();
+
   useEffect(() => {
     setMounted(true);
     const userDiaries = loadDiaries();
@@ -170,6 +173,7 @@ export default function ExplorePage() {
     if (!poi) return;
     setSelectedPoi(poi);
     setActiveNodeId(id);
+    setFlyToTarget({ lat: poi.lat, lng: poi.lng, zoom: 16 });
   }, [profile]);
 
   const handleNodeHover = useCallback((id: string | null) => {
@@ -233,7 +237,20 @@ export default function ExplorePage() {
 
           {mode === "diary" && (
             <div className="flex flex-col gap-2 mb-5">
-              <select value={selectedCountry} onChange={(e) => setSelectedCountry(e.target.value)}
+              <select value={selectedCountry} onChange={(e) => {
+                  const country = e.target.value;
+                  setSelectedCountry(country);
+                  if (country === "all") {
+                    setFlyToTarget({ lat: 20, lng: 0, zoom: 3 });
+                  } else {
+                    const countryDiaries = diaries.filter((d) => d.country === country);
+                    if (countryDiaries.length > 0) {
+                      const avgLat = countryDiaries.reduce((s, d) => s + d.lat, 0) / countryDiaries.length;
+                      const avgLng = countryDiaries.reduce((s, d) => s + d.lng, 0) / countryDiaries.length;
+                      setFlyToTarget({ lat: avgLat, lng: avgLng, zoom: 5 });
+                    }
+                  }
+                }}
                 className="w-full px-3 py-2 text-sm rounded-lg border border-cream bg-white text-ink focus:outline-none focus:border-terracotta">
                 <option value="all">所有国家</option>
                 {countries.map((c) => <option key={c} value={c}>{c}</option>)}
@@ -299,6 +316,7 @@ export default function ExplorePage() {
           heatZones={profile?.heatZones}
           showHeatmap={mode === "intel" && showHeatmap}
           mode={mode}
+          flyToTarget={flyToTarget}
           diaries={mode === "diary" ? filteredDiaries : undefined}
           onDiaryClick={mode === "diary" ? (d) => setSelectedDiary(d) : undefined}
         />

@@ -290,4 +290,3 @@ export function saveCachedHolidaySuggestions(cache: CachedHolidaySuggestions): v
   if (typeof window === "undefined") return;
   localStorage.setItem(HOLIDAY_SUGGESTIONS_CACHE_KEY, JSON.stringify(cache));
 }
-

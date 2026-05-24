@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { loadUserProfile } from "@/lib/storage";
+import { loadUserProfile, loadDiaries } from "@/lib/storage";
 import { getApiConfigParams } from "@/lib/ai/config-loader";
 import { SIM_SCENARIOS } from "@/lib/types";
+import { MOCK_DIARIES, CITY_DATA } from "@/lib/data";
 
 interface Message {
   role: "user" | "ai";
@@ -25,61 +26,136 @@ export function SimChat({ scenario, onBack }: Props) {
   const [started, setStarted] = useState(false);
   const [goalAchieved, setGoalAchieved] = useState(false);
   const [errorDetail, setErrorDetail] = useState<string | null>(null);
+  const [streamingText, setStreamingText] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, goalAchieved]);
+  }, [messages, streamingText]);
+
+  const callAgent = useCallback(
+    async (history: { role: string; content: string }[]) => {
+      const profile = loadUserProfile();
+      const userDiaries = loadDiaries();
+      const allDiaries = [...userDiaries, ...MOCK_DIARIES];
+      const ids = new Set<string>();
+      const unique = allDiaries.filter((d) => {
+        if (ids.has(d.id)) return false;
+        ids.add(d.id);
+        return true;
+      });
+
+      const config = getApiConfigParams();
+
+      const controller = new AbortController();
+      abortRef.current = controller;
+
+      const res = await fetch("/api/agent/simulate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: history.map((m) => ({ role: m.role, content: m.content })),
+          context: {
+            profile: {
+              sourceCountry: profile?.sourceCountry ?? "CN",
+              targetCountry: profile?.targetCountry ?? "GB",
+              targetCity: profile?.targetCity ?? "",
+              stage: profile?.stage ?? "pre-departure",
+            },
+            diaries: unique,
+            cityData: CITY_DATA,
+          },
+          scenario,
+          targetCountry: profile?.targetCountry ?? "GB",
+          targetCity: profile?.targetCity ?? "",
+          sourceCountry: profile?.sourceCountry ?? "CN",
+          apiKey: (config as Record<string, unknown>)?.apiKey,
+          apiBaseUrl: (config as Record<string, unknown>)?.apiBaseUrl,
+          provider: (config as Record<string, unknown>)?.provider,
+        }),
+        signal: controller.signal,
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        const msg = (err as Record<string, unknown>)?.message;
+        throw new Error(
+          typeof msg === "string" ? msg : `请求失败 (${res.status})`
+        );
+      }
+
+      let fullContent = "";
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed.startsWith("data: ")) continue;
+
+          try {
+            const event = JSON.parse(trimmed.slice(6));
+
+            if (event.type === "text_delta") {
+              fullContent += event.content ?? "";
+              setStreamingText(fullContent);
+            } else if (event.type === "error") {
+              throw new Error(event.message ?? "Agent 错误");
+            }
+          } catch (err) {
+            if (err instanceof Error && err.message !== "Agent 错误") throw err;
+            // Skip parse errors for incomplete chunks
+          }
+        }
+      }
+
+      setStreamingText(null);
+      return fullContent;
+    },
+    [scenario]
+  );
 
   const startScenario = async () => {
     setStarted(true);
     setSending(true);
     setErrorDetail(null);
-    const profile = loadUserProfile();
+
     try {
-      const res = await fetch("/api/ai/simulate-conversation", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          scenario,
-          targetCountry: profile?.targetCountry ?? "GB",
-          targetCity: profile?.targetCity ?? "",
-          sourceCountry: profile?.sourceCountry ?? "CN",
-          history: [],
-          ...getApiConfigParams(),
-        }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        // Extract background from first response
-        const content = data.response;
-        const bgMatch = content.match(/【场景背景】([\s\S]*?)(?=\n\n|$)/);
-        if (bgMatch) {
-          setBackground(bgMatch[1].trim());
-          const rest = content.replace(/【场景背景】[\s\S]*?(?=\n\n|$)/, "").trim();
-          if (rest) {
-            setMessages([{ role: "ai", content: rest }]);
-          }
-        } else {
-          setMessages([{ role: "ai", content }]);
+      const content = await callAgent([]);
+
+      // Strip "---" separators and blank thinking lines
+      const cleanContent = content.replace(/^---+$/gm, "").replace(/\n{3,}/g, "\n\n").trim();
+
+      // Extract background
+      const bgMatch = cleanContent.match(/【场景背景】([\s\S]*?)(?=\n\n|$)/);
+      if (bgMatch) {
+        setBackground(bgMatch[1].trim());
+        const rest = cleanContent.replace(/【场景背景】[\s\S]*?(?=\n\n|$)/, "").trim();
+        if (rest) {
+          setMessages([{ role: "ai", content: rest }]);
         }
-        if (data.goalAchieved) setGoalAchieved(true);
-      } else if (res.status === 503) {
-        setErrorDetail("AI 服务未配置。请在设置中配置 API Key。");
-        setMessages([{
-          role: "ai",
-          content: "AI 服务未配置。请先在设置中配置 API Key（DeepSeek/OpenAI/Anthropic 均可）。配置后重新进入场景即可。",
-        }]);
       } else {
-        setErrorDetail(data.message || "AI 服务暂时不可用");
-        setMessages([{
-          role: "ai",
-          content: `抱歉，AI 服务遇到了问题。${data.message || "请检查 API Key 配置或稍后重试。"}`,
-        }]);
+        setMessages([{ role: "ai", content: cleanContent }]);
       }
-    } catch {
-      setErrorDetail("网络连接失败");
-      setMessages([{ role: "ai", content: "连接失败，请检查网络后重试。" }]);
+
+      if (content.includes("【GOAL_ACHIEVED】")) setGoalAchieved(true);
+    } catch (err) {
+      setErrorDetail(err instanceof Error ? err.message : "网络连接失败");
+      setMessages([
+        {
+          role: "ai",
+          content: err instanceof Error ? err.message : "连接失败，请检查网络后重试。",
+        },
+      ]);
     }
     setSending(false);
   };
@@ -88,6 +164,7 @@ export function SimChat({ scenario, onBack }: Props) {
     if (!input.trim() || sending || goalAchieved) return;
     const userMsg = input.trim();
     setInput("");
+
     const history = [
       ...messages.map((m) => ({ role: m.role, content: m.content })),
       { role: "user", content: userMsg },
@@ -96,46 +173,32 @@ export function SimChat({ scenario, onBack }: Props) {
     setSending(true);
     setErrorDetail(null);
 
-    const profile = loadUserProfile();
     try {
-      const res = await fetch("/api/ai/simulate-conversation", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          scenario,
-          targetCountry: profile?.targetCountry ?? "GB",
-          targetCity: profile?.targetCity ?? "",
-          sourceCountry: profile?.sourceCountry ?? "CN",
-          history,
-          ...getApiConfigParams(),
-        }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setMessages((prev) => [...prev, { role: "ai", content: data.response }]);
-        if (data.goalAchieved) setGoalAchieved(true);
-      } else {
-        const errMsg = res.status === 503
-          ? "AI 服务未配置，请在设置中配置 API Key。"
-          : (data.message || "AI 服务遇到了问题。请稍后重试。");
-        setErrorDetail(errMsg);
-        setMessages((prev) => [...prev, { role: "ai", content: errMsg }]);
-      }
-    } catch {
+      const content = await callAgent(history);
+      const clean = content.replace("【GOAL_ACHIEVED】", "").trim();
+      setMessages((prev) => [...prev, { role: "ai", content: clean }]);
+      if (content.includes("【GOAL_ACHIEVED】")) setGoalAchieved(true);
+    } catch (err) {
+      setErrorDetail(err instanceof Error ? err.message : "网络错误");
       setMessages((prev) => [
         ...prev,
-        { role: "ai", content: "网络异常，请检查连接后重试。" },
+        {
+          role: "ai",
+          content: err instanceof Error ? err.message : "网络异常，请检查连接后重试。",
+        },
       ]);
     }
     setSending(false);
   };
 
   const handleContinue = () => {
+    abortRef.current?.abort();
     setMessages([]);
     setBackground(null);
     setGoalAchieved(false);
     setErrorDetail(null);
     setInput("");
+    setStreamingText(null);
     startScenario();
   };
 
@@ -187,9 +250,9 @@ export function SimChat({ scenario, onBack }: Props) {
             animate={{ opacity: 1, y: 0 }}
             className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
           >
-            <div className="max-w-[80%]">
+            <div className="max-w-[85%] min-w-0">
               <div
-                className={`rounded-card px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap ${
+                className={`rounded-card px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap break-words overflow-hidden ${
                   msg.role === "user"
                     ? "bg-terracotta/10 text-ink"
                     : "bg-white border border-cream/50 text-slate shadow-sm"
@@ -200,7 +263,21 @@ export function SimChat({ scenario, onBack }: Props) {
             </div>
           </motion.div>
         ))}
-        {sending && (
+
+        {/* Streaming indicator */}
+        {streamingText && (
+          <div className="flex justify-start">
+            <div className="max-w-[85%] bg-white border border-cream/50 rounded-card px-4 py-3 shadow-sm">
+              <p className="text-sm text-slate leading-relaxed whitespace-pre-wrap break-words">
+                {streamingText}
+                <span className="inline-block w-1.5 h-4 bg-slate/40 ml-0.5 animate-pulse align-middle" />
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Loading dots (only when sending but no streaming text yet) */}
+        {sending && !streamingText && (
           <div className="flex justify-start">
             <div className="bg-white border border-cream/50 rounded-card px-4 py-3 shadow-sm">
               <div className="flex gap-1.5">

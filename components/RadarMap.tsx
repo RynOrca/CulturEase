@@ -20,6 +20,7 @@ interface RadarMapProps {
   mode?: MapMode;
   diaries?: DiaryEntry[];
   onDiaryClick?: (diary: DiaryEntry) => void;
+  flyToTarget?: { lat: number; lng: number; zoom: number };
 }
 
 function createDiaryIcon(type: LifeType): L.DivIcon {
@@ -35,7 +36,7 @@ function createDiaryIcon(type: LifeType): L.DivIcon {
 
 export default function RadarMap({
   location, onNodeClick, onNodeHover, activeNodeId, categoryFilter,
-  pois, heatZones, showHeatmap, mode = 'intel', diaries, onDiaryClick,
+  pois, heatZones, showHeatmap, mode = 'intel', diaries, onDiaryClick, flyToTarget,
 }: RadarMapProps) {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
@@ -50,6 +51,8 @@ export default function RadarMap({
     const map = L.map(mapRef.current, {
       center: [location.lat, location.lng],
       zoom: location.zoom,
+      minZoom: 4,
+      worldCopyJump: true,
       zoomControl: true,
       attributionControl: true,
       updateWhenIdle: false,
@@ -61,7 +64,7 @@ export default function RadarMap({
     });
     tileLayer.on('load', () => setTilesLoading(false));
     tileLayer.addTo(map);
-    const loadingTimer = setTimeout(() => setTilesLoading(false), 3000);
+    const loadingTimer = setTimeout(() => setTilesLoading(false), 1500);
     mapInstanceRef.current = map;
     setMapReady(true);
     return () => { clearTimeout(loadingTimer); map.remove(); mapInstanceRef.current = null; setMapReady(false); };
@@ -137,6 +140,13 @@ export default function RadarMap({
     map.flyTo([location.lat, location.lng], location.zoom, { duration: 1.2 });
   }, [location]);
 
+  // 外部 flyTo（国家切换、POI 点击等）
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map || !flyToTarget) return;
+    map.flyTo([flyToTarget.lat, flyToTarget.lng], flyToTarget.zoom, { duration: 1.2 });
+  }, [flyToTarget]);
+
   // 渲染情报 POI 标记
   const renderIntelMarkers = useCallback(() => {
     const map = mapInstanceRef.current;
@@ -157,12 +167,14 @@ export default function RadarMap({
         </div>`,
         iconSize: [40, 40], iconAnchor: [20, 20],
       });
-      const marker = L.marker([item.lat, item.lng], { icon }).addTo(map)
-        .on('click', () => onNodeClick(item.id))
-        .on('mouseover', () => onNodeHover(item.id))
-        .on('mouseout', () => onNodeHover(null));
-      marker.bindTooltip(`<div style="font-family:'PingFang SC',sans-serif;font-size:11px;line-height:1.5;"><div style="color:${catConfig.color};font-size:10px;font-weight:500;margin-bottom:2px;">${catConfig.icon} ${catConfig.label}</div><div style="color:#1f2937;font-weight:600;">${item.name}</div><div style="color:#6b7280;font-size:10px;margin-top:2px;">${item.shortLabel}</div></div>`, { direction: 'top', offset: [0, -16], className: 'radar-tooltip-light' });
-      markersRef.current.push(marker);
+      for (const lngOffset of [-360, 0, 360]) {
+        const marker = L.marker([item.lat, item.lng + lngOffset], { icon }).addTo(map)
+          .on('click', () => onNodeClick(item.id))
+          .on('mouseover', () => onNodeHover(item.id))
+          .on('mouseout', () => onNodeHover(null));
+        marker.bindTooltip(`<div style="font-family:'PingFang SC',sans-serif;font-size:11px;line-height:1.5;"><div style="color:${catConfig.color};font-size:10px;font-weight:500;margin-bottom:2px;">${catConfig.icon} ${catConfig.label}</div><div style="color:#1f2937;font-weight:600;">${item.name}</div><div style="color:#6b7280;font-size:10px;margin-top:2px;">${item.shortLabel}</div></div>`, { direction: 'top', offset: [0, -16], className: 'radar-tooltip-light' });
+        markersRef.current.push(marker);
+      }
     });
   }, [pois, categoryFilter, activeNodeId, onNodeClick, onNodeHover, mode]);
 
@@ -175,11 +187,13 @@ export default function RadarMap({
     if (mode !== 'diary' || !diaries) return;
 
     diaries.forEach((diary) => {
-      const marker = L.marker([diary.lat, diary.lng], { icon: createDiaryIcon(diary.lifeType) });
-      marker.bindPopup(`<div style="font-family:system-ui,sans-serif;max-width:260px;"><h3 style="font-weight:600;font-size:14px;margin:0 0 4px;color:#2C2416;">${diary.title}</h3><div style="font-size:11px;color:#5C5F62;margin-bottom:6px;">${diary.city} · ${LIFE_TYPE_LABELS[diary.lifeType]}</div><p style="font-size:12px;color:#444;line-height:1.5;margin-bottom:8px;">${diary.content.slice(0, 100)}${diary.content.length > 100 ? '...' : ''}</p><div style="display:flex;align-items:center;justify-content:space-between;"><span style="font-size:11px;color:#999;">${diary.anonymous ? '匿名' : diary.authorName} · ${'⭐'.repeat(diary.rating)}</span><span style="font-size:11px;color:#5C5F62;">👍 ${diary.likes}</span></div></div>`, { maxWidth: 280 });
-      marker.on('click', () => onDiaryClick?.(diary));
-      marker.addTo(map);
-      diaryMarkersRef.current.push(marker);
+      for (const lngOffset of [-360, 0, 360]) {
+        const marker = L.marker([diary.lat, diary.lng + lngOffset], { icon: createDiaryIcon(diary.lifeType) });
+        marker.bindPopup(`<div style="font-family:system-ui,sans-serif;max-width:260px;"><h3 style="font-weight:600;font-size:14px;margin:0 0 4px;color:#2C2416;">${diary.title}</h3><div style="font-size:11px;color:#5C5F62;margin-bottom:6px;">${diary.city} · ${LIFE_TYPE_LABELS[diary.lifeType]}</div><p style="font-size:12px;color:#444;line-height:1.5;margin-bottom:8px;">${diary.content.slice(0, 100)}${diary.content.length > 100 ? '...' : ''}</p><div style="display:flex;align-items:center;justify-content:space-between;"><span style="font-size:11px;color:#999;">${diary.anonymous ? '匿名' : diary.authorName} · ${'⭐'.repeat(diary.rating)}</span><span style="font-size:11px;color:#5C5F62;">👍 ${diary.likes}</span></div></div>`, { maxWidth: 280 });
+        marker.on('click', () => onDiaryClick?.(diary));
+        marker.addTo(map);
+        diaryMarkersRef.current.push(marker);
+      }
     });
   }, [diaries, mode, onDiaryClick]);
 

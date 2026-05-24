@@ -9,13 +9,10 @@ interface ExternalResult {
   platformColor: string;
 }
 
-// Tags appended to external searches to surface study-abroad-relevant content
 const SEARCH_TAGS = ["留学", "文化冲击", "culture shock", "留学生活"];
 
 function deepLinks(query: string, targetCity: string): ExternalResult[] {
-  // Enhance query with tags for better study-abroad context
-  const taggedQuery = `${targetCity} ${query} ${SEARCH_TAGS.join(" ")}`.trim();
-  const q = encodeURIComponent(taggedQuery);
+  const q = encodeURIComponent(`${targetCity} ${query} ${SEARCH_TAGS.join(" ")}`.trim());
 
   return [
     {

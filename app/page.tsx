@@ -9,7 +9,7 @@ import { loadUserProfile, loadDiaries, loadCachedAnalysis, saveCachedAnalysis, i
 import { getApiConfigParams } from "@/lib/ai/config-loader";
 import { MOCK_DIARIES, CITY_DATA } from "@/lib/data";
 import { DiaryCard } from "@/components/diary/DiaryCard";
-import { GlobalSearch } from "@/components/home/GlobalSearch";
+import { HomeInput } from "@/components/home/HomeInput";
 
 const COUNTRY_MAP: Record<string, string> = {
   GB: "英国", US: "美国", AU: "澳大利亚", CA: "加拿大",
@@ -38,7 +38,6 @@ export default function Home() {
     insights: string;
     commonDifficulties?: string[];
     recommendations?: string[];
-    localSayings?: string[];
   } | null>(null);
   const [analysisLoading, setAnalysisLoading] = useState(false);
   const [searchActive, setSearchActive] = useState(false);
@@ -132,12 +131,12 @@ export default function Home() {
       >
         {/* Global Search */}
         <section className="mb-10">
-          <GlobalSearch
+          <HomeInput
             targetCity={profile.targetCity}
             targetCountry={profile.targetCountry}
             stage={profile.stage}
             sourceCountry={profile.sourceCountry}
-            onSearchActive={setSearchActive}
+            onActiveChange={setSearchActive}
           />
         </section>
 
@@ -293,23 +292,6 @@ export default function Home() {
                                 <li key={i} className="text-sm text-slate flex items-start gap-2">
                                   <span className="text-sage mt-0.5 shrink-0">→</span>
                                   <span>{r}</span>
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        )}
-
-                        {/* Local sayings & slang */}
-                        {cultureAnalysis.localSayings && cultureAnalysis.localSayings.length > 0 && (
-                          <div className="mt-3 p-4 rounded-lg bg-amber/5 border border-amber/15">
-                            <h4 className="text-xs font-semibold text-amber mb-2 uppercase tracking-wider">
-                              当地俗语 · 俚语
-                            </h4>
-                            <ul className="space-y-1.5">
-                              {cultureAnalysis.localSayings.map((s: string, i: number) => (
-                                <li key={i} className="text-sm text-slate flex items-start gap-2">
-                                  <span className="text-amber mt-0.5 shrink-0">💬</span>
-                                  <span>{s}</span>
                                 </li>
                               ))}
                             </ul>

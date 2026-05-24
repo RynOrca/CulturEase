@@ -3,8 +3,10 @@
 import { useState, useEffect, useCallback } from "react";
 import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
-import { loadUserProfile, loadCachedKit, saveCachedKit, loadKitProgress, saveKitProgress } from "@/lib/storage";
+import { loadUserProfile, loadDiaries, loadCachedKit, saveCachedKit, loadKitProgress, saveKitProgress } from "@/lib/storage";
 import { getApiConfigParams } from "@/lib/ai/config-loader";
+import { collectAgentResponse } from "@/lib/agent/collect";
+import { MOCK_DIARIES, CITY_DATA } from "@/lib/data";
 import { ProgressRing } from "./ProgressRing";
 import { ChecklistSection } from "./ChecklistSection";
 import type { SurvivalKit } from "@/lib/types";
@@ -65,37 +67,56 @@ export function SurvivalKitMain() {
     savedProgress: Record<string, boolean>,
   ) => {
     try {
-      const res = await fetch("/api/ai/survival-kit", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sourceCountry: p.sourceCountry,
-          targetCountry: p.targetCountry,
-          targetCity: p.targetCity,
-          stage: p.stage,
-          ...getApiConfigParams(),
-        }),
+      const config = getApiConfigParams();
+      const userDiaries = loadDiaries();
+      const allDiaries = [...userDiaries, ...MOCK_DIARIES];
+      const idSet = new Set<string>();
+      const uniqueDiaries = allDiaries.filter((d) => {
+        if (idSet.has(d.id)) return false;
+        idSet.add(d.id);
+        return true;
       });
 
-      if (res.status === 503) {
-        // API key not configured — use default kit
+      const fullContent = await collectAgentResponse("/api/agent/survival-kit", {
+        messages: [],
+        context: {
+          profile: {
+            sourceCountry: p.sourceCountry,
+            targetCountry: p.targetCountry,
+            targetCity: p.targetCity,
+            stage: p.stage,
+          },
+          diaries: uniqueDiaries,
+          cityData: CITY_DATA,
+        },
+        apiKey: (config as Record<string, unknown>)?.apiKey,
+        apiBaseUrl: (config as Record<string, unknown>)?.apiBaseUrl,
+        provider: (config as Record<string, unknown>)?.provider,
+      });
+
+      if (!fullContent) {
+        // API key not configured or error — use default kit
         setKit(DEFAULT_KIT);
         setLoading(false);
         return;
       }
 
-      if (!res.ok) throw new Error(`API error: ${res.status}`);
-
-      const data = await res.json();
-      if (data.kit?.sections) {
-        data.kit.sections.forEach((section: { id: string; items: { text: string; checked: boolean }[] }) => {
-          section.items.forEach((item, i) => {
-            const key = `${section.id}-${i}`;
-            item.checked = savedProgress[key] ?? false;
+      // Extract JSON from agent response
+      const jsonMatch = fullContent.match(/\{[\s\S]*"sections"[\s\S]*\}/);
+      if (jsonMatch) {
+        const data = JSON.parse(jsonMatch[0]);
+        if (data.sections) {
+          data.sections.forEach((section: { id: string; items: { text: string; checked: boolean }[] }) => {
+            section.items.forEach((item, i) => {
+              const key = `${section.id}-${i}`;
+              item.checked = savedProgress[key] ?? false;
+            });
           });
-        });
-        setKit(data.kit);
-        saveCachedKit(JSON.stringify(data.kit));
+          setKit(data);
+          saveCachedKit(JSON.stringify(data));
+        } else {
+          setKit(DEFAULT_KIT);
+        }
       } else {
         setKit(DEFAULT_KIT);
       }

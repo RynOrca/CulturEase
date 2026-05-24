@@ -41,9 +41,10 @@ interface Props {
   minZoom?: number;
   onMarkerClick?: (diary: DiaryEntry) => void;
   selectedDiaryId?: string | null;
+  onMapReady?: (map: L.Map) => void;
 }
 
-export function MapView({ diaries, centerLat, centerLng, zoom, minZoom = 3, onMarkerClick, selectedDiaryId }: Props) {
+export function MapView({ diaries, centerLat, centerLng, zoom, minZoom = 3, onMarkerClick, selectedDiaryId, onMapReady }: Props) {
   const mapRef = useRef<L.Map | null>(null);
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const markersLayerRef = useRef<L.LayerGroup | null>(null);
@@ -94,15 +95,17 @@ export function MapView({ diaries, centerLat, centerLng, zoom, minZoom = 3, onMa
       map.setView([25, 0], 3);
     }
 
-    L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
+    L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", {
       attribution:
-        '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>',
-      maxZoom: 18,
+        '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+      subdomains: "abcd",
+      maxZoom: 19,
     }).addTo(map);
 
     const markersLayer = L.layerGroup().addTo(map);
     markersLayerRef.current = markersLayer;
     mapRef.current = map;
+    onMapReady?.(map);
 
     return () => {
       map.remove();

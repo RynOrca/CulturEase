@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { getApiConfigParams } from "@/lib/ai/config-loader";
 
 const NAV_ITEMS = [
   { href: "/", label: "我的主页" },
@@ -20,18 +21,16 @@ export function NavBar() {
   const [apiStatus, setApiStatus] = useState<"loading" | "connected" | "missing">("loading");
 
   useEffect(() => {
-    // Check API status client-side
-    fetch("/api/ai/chat", {
+    // Check API status client-side — include user's API key from localStorage
+    const config = getApiConfigParams();
+    fetch("/api/ai/validate-key", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        question: "ping",
-        context: {},
-      }),
+      body: JSON.stringify(config),
     })
       .then((r) => {
-        if (r.status === 503) setApiStatus("missing");
-        else setApiStatus("connected");
+        if (r.ok) setApiStatus("connected");
+        else setApiStatus("missing");
       })
       .catch(() => setApiStatus("missing"));
   }, []);

@@ -40,7 +40,7 @@ export function MarkdownRenderer({ content, className = "" }: Props) {
 
   return (
     <div
-      className={className}
+      className={`break-words [&_pre]:overflow-x-auto [&_pre]:max-w-full [&_code]:break-all [&_a]:break-all ${className}`}
       dangerouslySetInnerHTML={{
         __html: `<p class="text-sm text-slate leading-relaxed mb-2">${html}</p>`,
       }}
