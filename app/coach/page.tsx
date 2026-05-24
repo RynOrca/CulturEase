@@ -105,6 +105,19 @@ function CoachContent() {
     }
   }, []);
 
+  // Handle ?simulate=xxx query param — enter simulate mode directly (only on mount)
+  const initialScenarioRef = useRef<string | null>(null);
+  if (!initialScenarioRef.current && typeof window !== "undefined") {
+    const params = new URLSearchParams(window.location.search);
+    initialScenarioRef.current = params.get("simulate");
+  }
+  useEffect(() => {
+    if (initialScenarioRef.current) {
+      setMode("simulate");
+      setSimScenario(initialScenarioRef.current);
+    }
+  }, []);
+
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [report]);
