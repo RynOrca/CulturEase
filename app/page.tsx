@@ -19,7 +19,7 @@ const COUNTRY_MAP: Record<string, string> = {
 const QUICK_ACTIONS = [
   { href: "/coach", label: "AI 导师", desc: "个性化报告与场景模拟", icon: "M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" },
   { href: "/survival-kit", label: "生存工具包", desc: "个性化清单，从容出发", icon: "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" },
-  { href: "/explore", label: "全球探索", desc: "发现更多城市和留学生故事", icon: "M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" },
+  { href: "/explore", label: "全球探索", desc: "情报地图与留学生日记", icon: "M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" },
 ];
 
 export default function Home() {
@@ -62,14 +62,12 @@ export default function Home() {
     setDiaries(unique);
   }, [router]);
 
-  // Fetch culture analysis — cached for 3h or until new diary
   useEffect(() => {
     if (!profile) return;
 
     const userDiaries = loadDiaries();
     const cached = loadCachedAnalysis();
 
-    // Use cache if still fresh
     if (cached && !isAnalysisStale(cached, userDiaries.length, profile.targetCity)) {
       setCultureAnalysis(cached.analysis as typeof cultureAnalysis);
       return;
@@ -119,8 +117,7 @@ export default function Home() {
   const targetCountryName = COUNTRY_MAP[profile.targetCountry] ?? profile.targetCountry;
 
   const relevantDiaries = diaries.filter(
-    (d) =>
-      d.city.toLowerCase() === profile.targetCity.toLowerCase()
+    (d) => d.city.toLowerCase() === profile.targetCity.toLowerCase()
   );
 
   const cityData = CITY_DATA[profile.targetCity] || null;
@@ -269,7 +266,6 @@ export default function Home() {
                           ))}
                         </div>
 
-                        {/* Common difficulties */}
                         {cultureAnalysis.commonDifficulties && cultureAnalysis.commonDifficulties.length > 0 && (
                           <div className="mb-4 p-4 rounded-lg bg-rust/5 border border-rust/15">
                             <h4 className="text-xs font-semibold text-rust mb-2 uppercase tracking-wider">
@@ -286,7 +282,6 @@ export default function Home() {
                           </div>
                         )}
 
-                        {/* Recommendations */}
                         {cultureAnalysis.recommendations && cultureAnalysis.recommendations.length > 0 && (
                           <div className="p-4 rounded-lg bg-sage/5 border border-sage/15">
                             <h4 className="text-xs font-semibold text-sage mb-2 uppercase tracking-wider">
@@ -320,7 +315,6 @@ export default function Home() {
 
                 {/* Sidebar: 1/3 */}
                 <div className="space-y-6">
-                  {/* City stats card */}
                   {cityData && (
                     <motion.div
                       initial={{ opacity: 0, x: 12 }}
@@ -363,7 +357,6 @@ export default function Home() {
                     </motion.div>
                   )}
 
-                  {/* Diary cards in sidebar */}
                   <section>
                     <div className="flex items-center justify-between mb-3">
                       <h2 className="font-display text-base font-semibold text-ink">
