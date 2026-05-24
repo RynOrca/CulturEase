@@ -113,7 +113,7 @@ export default function ExplorePage() {
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
   const [categoryFilter, setCategoryFilter] = useState<NodeCategory | null>(null);
-  const [showHeatmap, setShowHeatmap] = useState(true);
+  const [showHeatmap, setShowHeatmap] = useState(false);
 
   // Fly-to state for external map navigation
   const [flyToTarget, setFlyToTarget] = useState<{ lat: number; lng: number; zoom: number }>();
