@@ -7,6 +7,7 @@ import { loadUserProfile } from "@/lib/storage";
 import { getApiConfigParams } from "@/lib/ai/config-loader";
 import { SimChat } from "@/components/simulator/SimChat";
 import { ScenarioSelector } from "@/components/simulator/ScenarioSelector";
+import { QuizSection } from "@/components/quiz/QuizSection";
 
 type Mode = "report" | "simulate";
 
@@ -164,6 +165,16 @@ function CoachContent() {
             </div>
           )}
         </div>
+
+        {/* Knowledge Test Section */}
+        {profile && (
+          <QuizSection
+            sourceCountry={profile.sourceCountry}
+            targetCountry={profile.targetCountry}
+            targetCity={profile.targetCity}
+            stage={profile.stage}
+          />
+        )}
       </motion.div>
     </div>
   );

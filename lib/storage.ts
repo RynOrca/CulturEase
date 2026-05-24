@@ -1,4 +1,4 @@
-import { DiaryEntry, DiaryComment } from "./types";
+import { DiaryEntry, DiaryComment, CulturalScenario } from "./types";
 
 export function loadDiaries(): DiaryEntry[] {
   if (typeof window === "undefined") return [];
@@ -238,3 +238,56 @@ export function setAuthorName(name: string): void {
   if (typeof window === "undefined") return;
   localStorage.setItem("cultur-ease-author-name", name);
 }
+
+// ─── Cultural Scenarios Cache ──────────────────────────────────────────
+
+export interface CachedCulturalScenarios {
+  scenarios: CulturalScenario[];
+  sourceCountry: string;
+  targetCountry: string;
+  targetCity: string;
+}
+
+const CULTURAL_SCENARIOS_CACHE_KEY = "cultur-ease-cultural-scenarios";
+
+export function loadCachedCulturalScenarios(): CachedCulturalScenarios | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(CULTURAL_SCENARIOS_CACHE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveCachedCulturalScenarios(cache: CachedCulturalScenarios): void {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(CULTURAL_SCENARIOS_CACHE_KEY, JSON.stringify(cache));
+}
+
+// ─── Holiday Suggestions Cache ─────────────────────────────────────────
+
+const HOLIDAY_SUGGESTIONS_CACHE_KEY = "cultur-ease-holiday-suggestions";
+
+export interface CachedHolidaySuggestions {
+  holidays: { name: string; season: string; whereToBuyIngredients: string; localAlternatives: string; newConnections: string }[];
+  sourceCountry: string;
+  targetCountry: string;
+  targetCity: string;
+}
+
+export function loadCachedHolidaySuggestions(): CachedHolidaySuggestions | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(HOLIDAY_SUGGESTIONS_CACHE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveCachedHolidaySuggestions(cache: CachedHolidaySuggestions): void {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(HOLIDAY_SUGGESTIONS_CACHE_KEY, JSON.stringify(cache));
+}
+
